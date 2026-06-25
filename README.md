@@ -1,4 +1,5 @@
-Youth Crime Patterns in Victoria — Interactive Dashboard
+
+🔍Youth Crime Patterns in Victoria — Interactive Dashboard
 
 Overview
 An interactive 10-slide storyboard dashboard analysing a decade of youth crime data in Victoria, Australia (2015–2024). Built using R and flexdashboard, this project explores how youth offending patterns have shifted over time across age groups, gender, and crime types — including the impact of COVID-19.
@@ -18,12 +19,19 @@ Property crimes dominate youth offending among 15–17 year olds
 Males account for approximately 75% of all youth incidents
 
 Tools & Technologies
-
 Language: R
 Dashboard: flexdashboard (storyboard layout)
 Visualisation: ggplot2, plotly (interactive charts)
 Data Processing: tidyverse, dplyr, scales
 Data Source: Crime Statistics Agency Victoria (2024)
+
+Project Structure
+youth-crime-dashboard/
+│
+├── dashboard.Rmd        # Main dashboard file
+├── data/
+│   └── youth_crime_2015_2024.xlsx
+├── README.md
 
 How to Run
 1. Clone the repository
