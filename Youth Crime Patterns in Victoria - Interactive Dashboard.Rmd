@@ -1,0 +1,625 @@
+---
+title: "Understanding Youth Crime Patterns in Victoria: A Decade of Change (2015–2024)"
+author: "- Anushka Sauran"
+output:
+  flexdashboard::flex_dashboard:
+    storyboard: true
+    orientation: columns
+    vertical_layout: fill
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.align = "center", warning = FALSE, message = FALSE)
+
+# Loading the necessary libraries for data analysis and visualization
+library(tidyverse)
+library(flexdashboard)
+library(gt)
+library(ggplot2)
+library(readxl)
+library(plotly)
+library(DT)
+library(scales)
+library(viridis)
+```
+
+```{r}
+#Data Preparation and Processing
+# This section transforms raw crime statistics into meaningful insights about youth offending patterns.
+
+# Importing the youth crime excel file
+crime_data_file <- "youth crime 2015-2024.xlsx"
+
+# Extract youth offense trends organized by demographics
+# This sheet contains age-based breakdowns that help us understand developmental
+youth_demographics_raw <- read_excel(crime_data_file, sheet = "Table 02")
+
+# Focus on the most vulnerable age groups where intervention can be most effective
+# These age ranges represent critical developmental periods
+vulnerable_age_groups <- youth_demographics_raw %>%
+  filter(`Age Group` %in% c("10-14 years", "15-17 years", "18-19 years")) %>%
+  select(Year, `Age Group`, `Alleged Offender Incidents`) %>%
+  group_by(Year, `Age Group`) %>%
+  # Aggregate incidents to get clear yearly totals for each age group
+  summarise(yearly_incidents = sum(`Alleged Offender Incidents`, na.rm = TRUE)) %>%
+  ungroup()  
+
+# Import offense type data to understand what crimes young people are committing
+# This helps inform prevention strategies
+offense_patterns_raw <- read_excel(crime_data_file, sheet = "Table 04")
+
+# Analyze the most recent crime patterns for current policy relevance
+# Focusing on 15-17 year olds as they show highest incident rates
+current_offense_breakdown <- offense_patterns_raw %>%
+  filter(Year == 2024, `Age Group` == "15-17 years") %>%
+  group_by(`Offence Division`) %>%
+  # Calculate both raw numbers and percentages for comprehensive understanding
+  summarise(incident_count = sum(`Alleged Offender Incidents`, na.rm = TRUE)) %>%
+  mutate(percentage_of_total = incident_count / sum(incident_count) * 100)
+
+# Import detailed age-specific data for granular analysis
+# This provides insights into how offending patterns change year by year
+individual_age_data <- read_excel(crime_data_file, sheet = "Table 07")
+
+# Clean and standardize the individual age data for consistent analysis
+detailed_age_patterns <- individual_age_data %>%
+  # Focus on individual ages within our target range
+  filter(`Age Group` %in% as.character(10:19),
+         # Use specific gender categories to avoid double-counting totals
+         Sex %in% c("Males", "Females")) %>%  
+  rename(individual_age = `Age Group`) %>%
+  # Standardize gender labels for cleaner visualization
+  mutate(gender_category = case_when(
+    Sex == "Males" ~ "Male",
+    Sex == "Females" ~ "Female",
+    TRUE ~ Sex
+  )) %>%
+  group_by(individual_age, gender_category) %>%
+  # Sum incidents across all offense types for each age-gender combination
+  summarise(total_incidents = sum(`Alleged Offender Incidents`, na.rm = TRUE)) %>%
+  ungroup()
+
+# Analyze how different types of crimes have evolved over time
+# This helps identify emerging trends and persistent problems
+crime_evolution_patterns <- offense_patterns_raw %>%
+  filter(`Age Group` %in% c("10-14 years", "15-17 years", "18-19 years")) %>%
+  group_by(Year, `Offence Division`) %>%
+  summarise(annual_incidents = sum(`Alleged Offender Incidents`, na.rm = TRUE)) %>%
+  ungroup() %>%
+  # Filter to focus on crime types with substantial impact
+  group_by(`Offence Division`) %>%
+  filter(sum(annual_incidents) > 1000) %>%
+  ungroup()
+
+# Examine gender differences across age groups for targeted interventions
+# Understanding these patterns helps design appropriate prevention programs
+gender_age_distribution <- youth_demographics_raw %>%
+  filter(`Age Group` %in% c("10-14 years", "15-17 years", "18-19 years"),
+         Year == 2024) %>%
+  group_by(`Age Group`, Sex) %>%
+  summarise(total_annual_incidents = sum(`Alleged Offender Incidents`, na.rm = TRUE)) %>%
+  ungroup()
+
+# Calculate overall trends to understand the bigger picture context
+# This provides the foundation for understanding whether youth crime is increasing or decreasing
+overall_youth_trends <- vulnerable_age_groups %>%
+  group_by(Year) %>%
+  summarise(combined_youth_incidents = sum(yearly_incidents)) %>%
+  ungroup() %>%
+  # Calculate year-over-year changes to identify trend direction and magnitude
+  mutate(annual_change = combined_youth_incidents - lag(combined_youth_incidents),
+         percentage_change = (annual_change / lag(combined_youth_incidents)) * 100)
+
+# Create focused gender analysis for the most recent data
+# This helps understand current gender disparities in youth offending
+recent_gender_patterns <- youth_demographics_raw %>%
+  filter(Year == 2024, 
+         `Age Group` %in% c("10-14 years", "15-17 years", "18-19 years"),
+         # Ensure we capture all gender-specific data accurately
+         Sex %in% c("Males", "Females")) %>%  
+  group_by(Sex) %>%
+  summarise(gender_incident_total = sum(`Alleged Offender Incidents`, na.rm = TRUE)) %>%
+  ungroup() %>%
+  # Create cleaner labels for presentation
+  mutate(gender_label = case_when(
+    Sex == "Males" ~ "Male",
+    Sex == "Females" ~ "Female",
+    TRUE ~ Sex
+  ))
+
+```
+
+
+Slide 1 {data-orientation=columns}
+=====================================
+
+**Opening Story: Why Youth Crime Matters to All of Us**
+
+Youth crime affects every Victorian community, from suburban families to urban neighborhoods. When young people get involved in criminal activity, it represents both a failure of support systems and an opportunity for positive intervention. This analysis examines a decade of data about young offenders aged 10-19, seeking to understand patterns that can guide more effective prevention and intervention strategies.
+
+**The Questions We're Investigating:**
+- How have youth offending patterns shifted over this transformative decade?
+- Which young people are most at risk, and when do they need help most?
+- What specific behaviors are driving these statistics?
+- How do gender and age intersect to create different risk profiles?
+
+```{r}
+
+# Calculate key figures that tell the immediate story
+incidents_2024 <- sum(vulnerable_age_groups$yearly_incidents[vulnerable_age_groups$Year == 2024])
+incidents_2015 <- sum(vulnerable_age_groups$yearly_incidents[vulnerable_age_groups$Year == 2015])
+decade_change <- incidents_2024 - incidents_2015
+
+# Create an accessible summary table for initial context
+story_opening_stats <- data.frame(
+  KeyStatistic = c("Young People Involved in Crime (2024)", 
+                   "Young People Involved in Crime (2015)", 
+                   "Net Change Over Decade"),
+  RawNumbers = c(incidents_2024, incidents_2015, decade_change)
+)
+
+# Format the table for clear presentation
+story_opening_stats %>%
+  gt() %>%
+  fmt_number(columns = RawNumbers, use_seps = TRUE) %>%
+  tab_header(title = md("**The Youth Crime Situation at a Glance**")) %>%
+  tab_options(
+    table.font.size = "medium",
+    heading.align = "left",
+    row.striping.background_color = "#F9F9F9"
+  )
+
+```
+**Where This Data Comes From:** Crime Statistics Agency Victoria. (2024). Alleged offender incidents by age and sex, Victoria, 2015–2024 [Data set]. Victorian Government. https://www.crimestatistics.vic.gov.au/crime-statistics/latest-victorian-crime-data/download-data
+
+**Important Note:** Each "incident" represents a young person's interaction with law enforcement, not necessarily a conviction. This data helps us understand where intervention might be most needed.
+
+Slide 2 {data-orientation=columns}
+=====================================
+
+Row {data-height=200}
+-------------------------------------
+
+**The Decade Overview: Understanding the Bigger Picture (2015-2024)**
+
+**What This Timeline Reveals:**
+
+- Youth crime reached an unprecedented peak in 2020 with over 61,000 incidents, coinciding with early pandemic disruptions
+- 2018 actually showed relatively low incidents (~51,000), suggesting successful interventions during that period
+- 2021 saw the decade's lowest point (~45,500) as pandemic restrictions fully took effect
+- 2024 shows the highest incidents in the entire decade at 65,000+, representing a concerning escalation
+- The pattern shows dramatic swings rather than gradual trends, indicating youth crime responds rapidly to social changes
+
+**Why These Patterns Matter:** The volatile nature of these trends suggests that youth crime is highly sensitive to social, economic, and policy changes. The 2024 peak represents an urgent crisis requiring immediate attention.
+
+Row {data-height=500}
+-------------------------------------
+
+```{r}
+
+# Create an engaging visualization that shows the human story behind the numbers
+p1 <- ggplot(overall_youth_trends, aes(x = factor(Year), y = combined_youth_incidents)) +
+  
+  # Use a line to show continuity over time
+  geom_line(group = 1, color = "#7F55B1", size = 2, alpha = 0.5) +
+  
+  # Points emphasize individual years and make data more readable
+  geom_point(color = "#AF3E3E", size = 3) +
+  scale_y_continuous(labels = comma_format()) +
+  labs(title = "A Decade of Youth Crime: The Full Story (2015–2024)",
+       subtitle = "All youth aged 10–19 years combined",
+       x = "Year", y = "Young People Involved in Criminal Incidents") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 12, family = "Arial Black"),
+        panel.grid.minor = element_blank())
+
+ggplotly(p1) %>%
+  layout(title = list(text = paste0("A Decade of Youth Crime: The Full Story (2015–2024)" ,
+                                   "<br><sup>All youth aged (10–19 years) combined</sup>")))
+
+```
+Slide 3 {data-orientation=columns}
+========================================
+
+Row {data-height=200}
+-------------------------------------
+
+**Age Groups - Who's Most at Risk?**
+
+**The Developmental Story These Numbers Tell:** 
+
+• **Ages 10-14 (Early Adolescence):** While showing the lowest numbers, these incidents are particularly concerning because they often predict future problems. Early intervention here can prevent escalation.
+
+• **Ages 15-17 (Peak Adolescence):** This group consistently shows the highest incident rates. Brain development research tells us this is when risk-taking peaks while impulse control is still developing.
+
+• **Ages 18-19 (Late Adolescence):** Numbers remain significant but more stable. Young adults in this range are transitioning to independence but may still benefit from youth-focused interventions.
+
+**The Prevention Opportunity:** Understanding these age-based patterns helps communities target resources where they'll have the greatest impact on young lives.
+
+Row {data-height=500}
+-------------------------------------
+
+```{r}
+
+# Create a visualization that highlights the human development aspect
+p2 <- ggplot(vulnerable_age_groups, aes(x = factor(Year), y = yearly_incidents, color = `Age Group`)) +
+  geom_line(size = 1, aes(group = `Age Group`)) +
+  geom_point(size = 3) +
+  
+  # Use colors that reflect the progression from childhood to early adulthood
+  scale_color_manual(values = c("10-14 years" = "#789DBC", 
+                                "15-17 years" = "#A5B68D", 
+                                "18-19 years" = "#FF8A8A")) +
+  scale_y_continuous(labels = comma_format()) +
+  labs(title = "Youth Crime by Age Group (2015–2024)",
+       subtitle = "Different ages face different risks and require different approaches",
+       x = "Year", y = "Annual Criminal Incidents",
+       color = "Age Group") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 12, family = "Arial Black"),
+        plot.subtitle = element_text(size = 11),
+        legend.position = "bottom")
+
+ggplotly(p2)%>%
+  layout(title = list(text = paste0("Youth Crime by Age Group (2015–2024)" ,
+                                   "<br><sup>Different ages face different risks and require different approaches</sup>")))
+
+```
+Slide 4 {data-orientation=columns}
+========================================
+
+Row {data-height=200}
+-------------------------------------
+
+**Peak Offending Years - The Teen Crisis**
+
+**Two Different Types of Crisis:** 
+
+**2020 - The Pandemic Surge:** Counter-intuitively, 2020 saw a massive spike in youth crime incidents despite lockdowns. This suggests that pandemic stresses - family tension, economic hardship, disrupted routines - may have actually increased youth criminal behavior initially.
+
+**2024 - The Current Escalation:** This represents the highest youth crime levels in the entire decade, with all age groups contributing to what appears to be a systemic breakdown in youth support systems.
+
+**Understanding the Difference:** While 2020's surge might have been driven by acute pandemic stress, 2024's crisis appears to reflect deeper, more persistent problems in how we're supporting young people in the post-pandemic world.
+
+Row {data-height=500}
+-------------------------------------
+
+```{r}
+
+# Analyze the two major peak periods: 2020 and 2024
+crisis_comparison <- vulnerable_age_groups %>%
+  filter(Year %in% c(2020, 2024)) %>%
+  group_by(Year, `Age Group`) %>%
+  summarise(crisis_incidents = sum(yearly_incidents)) %>%
+  ungroup()
+
+# Visualize both crisis periods to understand their different characteristics
+p3 <- ggplot(crisis_comparison, aes(x = `Age Group`, y = crisis_incidents, fill = factor(Year))) +
+  geom_col(position = "dodge", alpha = 0.85, width = 0.7) +
+  # Use colors that distinguish between the two crisis periods
+  scale_fill_manual(values = c("2020" = "#95D2B3", "2024" = "#E1ACAC"),
+                    name = "Crisis Year") +
+  scale_y_continuous(labels = comma_format()) +
+  # Add value labels to emphasize the scale difference
+  geom_text(aes(label = comma(round(crisis_incidents))), 
+            position = position_dodge(width = 0.7),
+            vjust = -0.3, size = 3.5, fontface = "bold") +
+  labs(title = "Two Different Crises: 2020 vs 2024 Youth Crime Peaks",
+       subtitle = "Comparing the pandemic surge with the current escalation",
+       x = "Age Group", 
+       y = "Annual Incidents") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 12, family = "Arial Black"),
+        plot.subtitle = element_text(size = 11),
+        legend.position = "bottom")
+
+ggplotly(p3)%>%
+  layout(title = list(text = paste0("Two Different Crises: 2020 vs 2024 Youth Crime Peaks" ,
+                                   "<br><sup>Comparing the pandemic surge with the current escalation</sup>")))
+
+```
+Slide 5 {data-orientation=columns}
+========================================
+
+Row {data-height=200}
+-------------------------------------
+
+**The Crimes Behind the Statistics: What Are Young People Actually Doing?**
+
+**The Human Story Behind These Categories:**
+
+Rather than just seeing crime statistics, these categories represent different types of struggles and poor decision-making that young people face:
+
+- **Property Crimes:** Often driven by peer pressure, perceived needs, or thrill-seeking behavior
+- **Public Order Offenses:** May reflect social conflicts, substance use, or lack of positive outlets
+- **Violent Crimes:** While less common, these often stem from unresolved conflicts or learned behaviors
+
+**Implications for Support:** Understanding what young people are actually doing wrong helps communities design more targeted prevention programs that address root causes rather than just consequences.
+
+Row {data-height=300}
+-------------------------------------
+
+```{r}
+
+# Create a visualization that shows the types of behaviors driving the statistics
+p4 <- plot_ly(current_offense_breakdown, 
+              labels = ~`Offence Division`, 
+              values = ~incident_count,
+              type = 'pie',
+              hole = 0.4,  
+              textinfo = 'percent',  
+              textposition = 'inside',  
+              textfont = list(size = 12, color = 'white'),
+              
+              # Use a color palette that's both accessible and visually appealing
+              marker = list(colors = c('#789DBC', '#BACD92', '#E5989B', '#AD88C6', 
+                                     '#FFB996', '#819A91'),
+                            line = list(color = '#FFFFFF', width = 2))) %>%
+  layout(title = list(text = "Understanding Youth Behavior: Crime Types Among 15-17 Year Olds (2024)",
+                     font = list(size = 12, family = "Arial Black", color = "black")),
+         showlegend = TRUE,
+         legend = list(orientation = "v", 
+                      x = 1.01, 
+                      y = 0.5,
+                      font = list(size = 11),
+                      itemwidth = 30),
+         margin = list(l = 40, r = 220, t = 60, b = 40),
+         width = 700,
+         height = 500)
+p4
+
+```
+
+Slide 6 {data-orientation=columns}
+========================================
+
+Row {data-height=200}
+-------------------------------------
+
+**Gender Patterns: Why Young Men and Women Follow Different Paths**
+
+**Understanding the Gender Gap:** The significant difference in incident rates between young men and women reflects complex social, developmental, and cultural factors:
+
+• **Social Expectations:** Young men may face different pressures around risk-taking and aggression
+
+• **Peer Influences:** Male peer groups may normalize certain types of risky behavior
+
+• **Expression of Problems:** Young men and women may express underlying issues (trauma, family problems, mental health struggles) in different ways
+
+**Why This Matters for Prevention:** Effective prevention programs need to account for these different pathways into criminal behavior, offering gender-responsive approaches that address the specific risks each group faces.
+
+Row {data-height=500}
+-------------------------------------
+
+```{r}
+
+# Ensure proper ordering for clear comparison
+recent_gender_patterns$gender_label <- factor(recent_gender_patterns$gender_label, levels = c("Female", "Male"))
+
+# Create a visualization that highlights gender differences thoughtfully
+p5 <- ggplot(recent_gender_patterns, aes(x = gender_label, y = gender_incident_total, fill = gender_label)) +
+  geom_col(width = 0.6, alpha = 0.8) +
+  
+  # Use colors that avoid stereotyping while remaining clear
+  scale_fill_manual(values = c("Female" = "#E8B4CB", "Male" = "#87CEEB")) + 
+  scale_y_continuous(labels = comma_format()) +
+  
+  # Add clear data labels to emphasize the scale difference
+  geom_text(aes(label = paste0(comma(gender_incident_total))), 
+            position = position_dodge(width = 0.9), 
+            vjust = 0.5, 
+            size = 3, 
+            fontface = "bold",
+            lineheight = 0.8) +
+  labs(title = "Gender and Youth Crime: Different Risks, Different Needs (2024)",
+       subtitle = "Understanding why young men and women follow different paths",
+       x = "Gender",
+       y = "Total Annual Incidents") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 12, family = "Arial Black"),
+        plot.subtitle = element_text(size = 10),
+        legend.position = "none",
+        panel.grid.major.x = element_blank(),  
+        axis.text = element_text(size = 10))
+
+ggplotly(p5)%>%
+  layout(title = list(text = paste0("Gender and Youth Crime: Different Risks, Different Needs (2024)" ,
+                                   "<br><sup>Understanding why young men and women follow different paths</sup>")))
+
+```
+Slide 7 {data-orientation=columns}
+========================================
+
+Row {data-height=200}
+-------------------------------------
+
+**Age-by-Age Breakdown: The Detailed Picture of Risk**
+
+**The Developmental Story:** This detailed breakdown reveals how criminal behavior patterns emerge and evolve through the teenage years:
+
+• **Early Teens (10-13):** Lower overall incidents but important warning signs that shouldn't be ignored
+
+• **Peak Risk Period (15-17):** Dramatic increases, especially among young men, reflecting developmental vulnerabilities
+
+• **Late Teens (18-19):** Patterns begin to stabilize but remain elevated, showing the lasting impact of earlier interventions or lack thereof
+
+**Intervention Timing:** This data suggests that the window for most effective intervention may be narrower than previously thought, with ages 13-15 being particularly critical for prevention efforts.
+
+Row {data-height=500}
+-------------------------------------
+
+```{r}
+
+# Create a comprehensive view of how risk changes with each year of development
+p6 <- ggplot(detailed_age_patterns, aes(x = factor(individual_age), y = total_incidents, fill = gender_category)) +
+  geom_col(position = "dodge", alpha = 0.9) +
+  
+  # Use colors that maintain consistency with previous gender analysis
+  scale_fill_manual(values = c("Female" = "#D8A7CA", "Male" = "#7FB3D3")) +
+  scale_y_continuous(labels = comma_format()) +
+  labs(title = "The Developmental Journey: How Risk Changes Year by Year",
+       subtitle = "Each age brings different challenges and opportunities for intervention",
+       x = "Age (Years)", 
+       y = "Annual Criminal Incidents",
+       fill = "Gender") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 12, family = "Arial Black"),
+        legend.position = "bottom")
+
+ggplotly(p6)%>%
+  layout(title = list(text = paste0("The Developmental Journey: How Risk Changes Year by Year" ,
+                                   "<br><sup>Understanding why young men and women follow different paths</sup>")))
+
+```
+Slide 8 {data-orientation=columns}
+========================================
+
+Row {data-height=200}
+-------------------------------------
+
+**The Pandemic Paradox: How COVID-19 Created Unexpected Patterns**
+
+**The Pandemic's Contradictory Effects:**
+
+• **2020 - Early Pandemic Surge:** Contrary to expectations, youth crime spiked to decade-high levels as families faced unprecedented stress, economic uncertainty, and social disruption
+
+• **2021 - Lockdown Impact:** This was when restrictions truly took effect, creating the decade's lowest youth crime levels as movement and social interactions were severely limited  
+
+• **Delayed Response:** The data suggests that pandemic stress initially increased youth crime, with the preventive effects of restrictions only appearing later
+
+**Lessons About Social Disruption:** The pandemic taught us that major social changes can have unexpected and delayed effects on youth behavior, with initial stress potentially increasing crime before protective restrictions take effect.
+
+Row {data-height=500}
+-------------------------------------
+
+```{r}
+
+# Analyze how the pandemic created two distinct phases of impact
+pandemic_period_comparison <- vulnerable_age_groups %>%
+  mutate(time_period = case_when(
+    Year %in% c(2015:2019) ~ "Pre-Pandemic",
+    Year == 2020 ~ "Early Pandemic Surge", 
+    Year == 2021 ~ "Lockdown Impact",
+    Year %in% c(2022:2024) ~ "Post-Pandemic Recovery"
+  )) %>%
+  # Remove the average calculation since we want to see the actual 2020 and 2021 data
+  filter(!is.na(time_period)) %>%
+  group_by(time_period, `Age Group`) %>%
+  summarise(period_incidents = if(time_period[1] %in% c("Early Pandemic Surge", "Lockdown Impact")) {
+    sum(yearly_incidents)  # For single years, just sum
+  } else {
+    mean(yearly_incidents)  # For multi-year periods, take average
+  }) %>%
+  ungroup()
+
+# Visualize the complex pandemic impact
+p7 <- ggplot(pandemic_period_comparison, aes(x = factor(time_period, levels = c("Pre-Pandemic", "Early Pandemic Surge", "Lockdown Impact", "Post-Pandemic Recovery")), y = period_incidents, fill = `Age Group`)) +
+  geom_col(position = "dodge", alpha = 0.85, width = 0.7) +
+  
+  # Use a color scheme that reflects the complexity of the pandemic period
+  scale_fill_manual(values = c("10-14 years" = "#CCD5AE", 
+                              "15-17 years" = "#FFD0D0", 
+                              "18-19 years" = "#BED7DC")) +
+  scale_y_continuous(labels = comma_format()) +
+  labs(title = "COVID-19's Complex and Unexpected Impact on Youth Crime",
+       subtitle = "The pandemic created both the decade's peak AND lowest points",
+       x = "Time Period", 
+       y = "Incidents per Period",
+       fill = "Age Group") +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(size = 12, family = "Arial Black"),
+        axis.text.x = element_text(angle = 45, hjust = 0.5),
+        legend.position = "right")
+ggplotly(p7)%>%
+  layout(title = list(text = paste0("COVID-19's Complex and Unexpected Impact on Youth Crime" ,
+                                   "<br><sup>The pandemic created both the decade's peak AND lowest points</sup>")))
+
+```
+Slide 9 {data-orientation=columns}
+========================================
+
+Row {data-height=200}
+-------------------------------------
+
+**Current Concerns: The Troubling 2022-2024 Trend**
+
+**Why These Recent Increases Matter:**
+
+• **Accelerating Growth:** The rate of increase appears to be speeding up, not slowing down
+
+• **Broad-Based Problem:** All age groups are contributing to the increases, suggesting systemic rather than isolated issues
+
+• **15-17 Age Group Driving Growth:** This critical developmental period continues to show the most concerning patterns
+
+• **Time for Action:** The trajectory suggests that without intervention, 2025 could see even higher levels
+
+**The Urgency of Response:** These recent trends indicate that current prevention and intervention strategies may need significant strengthening or reimagining to address the evolving challenges facing Victorian youth.
+
+Row {data-height=500}
+-------------------------------------
+
+```{r}
+
+# Focus on the most recent period to understand current challenges
+recent_detailed_trends <- vulnerable_age_groups %>%
+  filter(Year %in% 2022:2024) %>%
+  group_by(Year) %>%
+  mutate(annual_total = sum(yearly_incidents),
+         age_group_percentage = (yearly_incidents / annual_total) * 100)
+
+# Create a stacked visualization that shows both growth and composition
+p8 <- ggplot(recent_detailed_trends, aes(x = factor(Year), y = yearly_incidents, fill = `Age Group`)) +
+  geom_col(alpha = 0.9) +
+  geom_text(aes(label = format(yearly_incidents, big.mark = ",")), 
+            position = position_stack(vjust = 0.5), 
+            color = "white", fontface = "bold", size = 3) +
+  scale_fill_viridis_d(option = "plasma") +
+  scale_y_continuous(labels = comma_format()) +
+  labs(title = "Current Challenges: The Concerning 2022-2024 Escalation",
+       subtitle = "Understanding why youth crime is increasing and what it means for communities",
+       x = "Year", y = "Young People Involved in Criminal Incidents",
+       fill = "Age Group") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 12, family = "Arial Black"),
+        legend.position = "bottom")
+
+ggplotly(p8) %>%
+  layout(title = list(text = paste0("Current Challenges: The Concerning 2022-2024 Escalation",
+                                   "<br><sup>Understanding why youth crime is increasing and what it means for communities</sup>")))
+
+```
+Slide 10
+===================================
+
+**Making Sense of It All: What This Data Means for Our Communities**
+
+**The Human Story Behind the Statistics:**
+
+After examining a decade of data representing thousands of young Victorian lives, several clear patterns emerge that should guide our community response:
+
+1. **The Critical Window:** Ages 15-17 represent the highest-risk period, when brain development, social pressures, and limited life experience create perfect conditions for poor decision-making.
+
+2. **Gender-Responsive Needs:** Young men account for approximately three-quarters of incidents, but this doesn't mean young women should be ignored. Each group needs tailored approaches that address their specific risk factors.
+
+3. **Crime Type Focus:** Property crimes dominate youth offending, suggesting that prevention programs should emphasize decision-making skills, understanding consequences, and providing positive alternatives to thrill-seeking behavior.
+
+4. **Recent Escalation:** The post-pandemic increase demands immediate attention, as current trajectories could lead to crisis-level incidents affecting thousands more young lives.
+
+**Moving Forward Together:**
+
+This data tells us that youth crime isn't an inevitable problem—it's a community challenge that responds to targeted, evidence-based interventions. The patterns we see reflect broader social conditions, developmental realities, and the effectiveness (or lack thereof) of current support systems.
+
+**What Communities Can Do:**
+- Recognize that every young person involved in crime represents both a failure of prevention and an opportunity for redemption
+- Support evidence-based programs that address root causes rather than just responding to symptoms  
+- Advocate for sustained investment in youth development, particularly during the critical 15-17 age period
+- Create positive opportunities for young people that provide the excitement and belonging they might otherwise seek through risky behavior
+
+**REFERENCES**
+
+Crime Statistics Agency Victoria. (2024). Alleged offender incidents by age and sex, Victoria, 2015–2024 [Data set]. Victorian Government. https://www.crimestatistics.vic.gov.au/crime-statistics/latest-victorian-crime-data/download-data
+
+RStudio. (n.d.). Storyboard layouts. flexdashboard. https://pkgs.rstudio.com/flexdashboard/articles/layouts.html#storyboard
+
+---
